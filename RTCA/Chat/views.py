@@ -1,19 +1,18 @@
 from django.shortcuts import render
-
-# Create your views here.
-# ------------ views.py ------------
-from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
-from django.db.models import Q, OuterRef, Subquery
-from .models import ChatMessage, User
-from .serializers import MessageSerializer
 from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from django.db.models import Q, OuterRef, Subquery
+from django.contrib.auth import authenticate, login, logout
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.contrib.auth import authenticate, login, logout
-from .serializers import UserSerializer, LoginSerializer
-from rest_framework.permissions import AllowAny
+import logging
+from .models import ChatMessage, User
+from .serializers import MessageSerializer, UserSerializer, LoginSerializer
+from .backends import EmailBackend
 
+logger = logging.getLogger(__name__)  # Logger for debugging
+
+# ✅ Registration View with Explicit Authentication Backend
 class RegisterView(generics.CreateAPIView):
     permission_classes = [AllowAny]
     serializer_class = UserSerializer
@@ -22,33 +21,21 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        
-        # Log the user in after registration
-        login(request, user)
-        
+
+        # ✅ Explicitly set authentication backend
+        user.backend = 'Chat.backends.EmailBackend'
+        login(request, user, backend='Chat.backends.EmailBackend')
+
         return Response({
             'user': serializer.data,
             'message': 'Registration successful'
         }, status=status.HTTP_201_CREATED)
 
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from django.contrib.auth import authenticate, login
-from rest_framework.permissions import AllowAny
-import logging
 
-logger = logging.getLogger(__name__)
-
-from django.contrib.auth import authenticate, login
-from rest_framework.response import Response
-from rest_framework import status
-from .serializers import LoginSerializer
-from .backends import EmailBackend  # Import the custom backend
-
+# ✅ Login View with Proper User Authentication
 class LoginView(APIView):
     permission_classes = [AllowAny]
-    
+
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if not serializer.is_valid():
@@ -56,46 +43,43 @@ class LoginView(APIView):
                 'error': 'Validation failed',
                 'details': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         email = serializer.validated_data['email']
         password = serializer.validated_data['password']
-        
+
         # Debug print
         logger.debug(f"Attempting login with email: {email}")
-        
-        # Try to get the user first
-        try:
-            user_exists = User.objects.filter(email=email).exists()
-            if not user_exists:
-                return Response({
-                    'error': 'No user found with this email'
-                }, status=status.HTTP_401_UNAUTHORIZED)
-        except Exception as e:
-            logger.error(f"Error checking user: {str(e)}")
-        
-        # Authenticate using the custom backend
-        user = authenticate(request, email=email, password=password, backend='Chat.backends.EmailBackend')
-        
+
+        # Check if the user exists
+        user_exists = User.objects.filter(email=email).exists()
+        if not user_exists:
+            return Response({'error': 'No user found with this email'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Authenticate user using the custom backend
+        user = authenticate(request, email=email, password=password)
         if user is not None:
-            login(request, user)
+            # ✅ Explicitly set authentication backend before login
+            user.backend = 'Chat.backends.EmailBackend'
+            login(request, user, backend='Chat.backends.EmailBackend')
+
             return Response({
                 'user': UserSerializer(user).data,
                 'message': 'Login successful'
             })
         else:
-            # Check if password is being passed correctly
-            logger.debug("Authentication failed")
-            return Response({
-                'error': 'Invalid credentials. Please check your email and password.'
-            }, status=status.HTTP_401_UNAUTHORIZED)
+            logger.debug("Authentication failed")  # Log failed authentication
+            return Response({'error': 'Invalid credentials. Please check your email and password.'},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
+
+# ✅ Logout View
 class LogoutView(APIView):
     def post(self, request):
         logout(request)
-        return Response({
-            'message': 'Logged out successfully'
-        }, status=status.HTTP_200_OK)
+        return Response({'message': 'Logged out successfully'}, status=status.HTTP_200_OK)
 
+
+# ✅ Inbox View to Get Last Messages
 class MyInbox(generics.ListAPIView):
     serializer_class = MessageSerializer
     permission_classes = [IsAuthenticated]
@@ -118,6 +102,8 @@ class MyInbox(generics.ListAPIView):
             )
         ).order_by("-id")
 
+
+# ✅ Get Messages Between Two Users
 class GetMessages(generics.ListAPIView):
     serializer_class = MessageSerializer
     permission_classes = [IsAuthenticated]
@@ -130,6 +116,8 @@ class GetMessages(generics.ListAPIView):
             (Q(sender=receiver_id) & Q(receiver=sender_id))
         ).order_by('date')
 
+
+# ✅ Send a Message
 class SendMessage(generics.CreateAPIView):
     serializer_class = MessageSerializer
     permission_classes = [IsAuthenticated]
@@ -137,6 +125,8 @@ class SendMessage(generics.CreateAPIView):
     def perform_create(self, serializer):
         serializer.save(sender=self.request.user)
 
+
+# ✅ Chat History Between Two Users
 class ChatHistory(generics.ListAPIView):
     serializer_class = MessageSerializer
     permission_classes = [IsAuthenticated]
