@@ -33,6 +33,9 @@ class RegisterView(generics.CreateAPIView):
 
 
 # ✅ Login View with Proper User Authentication
+from django.contrib.auth import authenticate, login
+from django.http import JsonResponse
+
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
@@ -50,7 +53,7 @@ class LoginView(APIView):
         # Debug print
         logger.debug(f"Attempting login with email: {email}")
 
-        # Check if the user exists
+        # Check if user exists
         user_exists = User.objects.filter(email=email).exists()
         if not user_exists:
             return Response({'error': 'No user found with this email'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -58,16 +61,26 @@ class LoginView(APIView):
         # Authenticate user using the custom backend
         user = authenticate(request, email=email, password=password)
         if user is not None:
-            # ✅ Explicitly set authentication backend before login
             user.backend = 'Chat.backends.EmailBackend'
             login(request, user, backend='Chat.backends.EmailBackend')
 
-            return Response({
+            # ✅ Explicitly save the session
+            request.session.save()
+
+            # ✅ Return response with session data
+            response = Response({
                 'user': UserSerializer(user).data,
                 'message': 'Login successful'
             })
+            response.set_cookie(
+                key='sessionid', 
+                value=request.session.session_key, 
+                httponly=True, 
+                samesite='Lax'
+            )
+            return response
         else:
-            logger.debug("Authentication failed")  # Log failed authentication
+            logger.debug("Authentication failed") 
             return Response({'error': 'Invalid credentials. Please check your email and password.'},
                             status=status.HTTP_401_UNAUTHORIZED)
 

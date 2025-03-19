@@ -142,8 +142,9 @@ AUTHENTICATION_BACKENDS = [
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
-    ],
+    ]
 }
+
 
 AUTH_USER_MODEL = 'Chat.User'  # Add this if not already present
 

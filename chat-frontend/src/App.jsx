@@ -12,7 +12,7 @@ const App = () => {
   return (
     <Router>
       <Routes>
-        <Route path="/chat/inbox/my-inbox" element={<Inbox />} />
+        <Route path="/chat/inbox" element={<Inbox />} />
         <Route path="/chat/history/:userId" element={<ChatHistory />} />
         <Route path="/chat/messages/:senderId/:receiverId" element={<Messages />} />
         <Route path="/login" element={<Login />} />
